@@ -17,17 +17,45 @@
 #include <inttypes.h>
 
 #define SLEEP_TIME_MS	1
+#define WINDOW 10
 
 /*
  * Get button configuration from the devicetree sw0 alias. This is mandatory.
  */
 #define SW0_NODE	DT_ALIAS(sw0)
+#define TIMER_INSTANCE 0
 #if !DT_NODE_HAS_STATUS_OKAY(SW0_NODE)
 #error "Unsupported board: sw0 devicetree alias is not defined"
 #endif
 static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
 							      {0});
 static struct gpio_callback button_cb_data;
+static uint32_t counter = 0;	// counter per button presses
+uint32_t lastPressTime = 0;
+uint32_t deltaSum = 0;
+uint32_t deltaCount = 0;
+bool filled = false;
+
+void timer_expiry(struct k_timer *timer_id){
+	__disable_irq();
+	if(deltaCount > 0){
+		uint32_t avgCycle = deltaSum / deltaCount;	// calculates avg cycles 
+		uint32_t avgMS = k_cyc_to_ms_floor32(avgCycle);
+		printk("Avg Response Time: %u ms over %u presses\n",avgMS,deltaCount);
+
+	} else {
+		printk("Avg Response Time: 0\n");	
+	}
+	deltaSum = 0;	// sum of respones times
+	deltaCount = 0;	// total count
+	lastPressTime = 0;	// reference to last button press time
+	printk("Number of Button Presses: %d\n",counter);
+	counter = 0;	// resets button presses
+	__enable_irq();
+}
+
+K_TIMER_DEFINE(my_timer,timer_expiry,NULL);
+
 
 /*
  * The led0 devicetree alias is optional. If present, we'll use it
@@ -39,11 +67,22 @@ static struct gpio_dt_spec led = GPIO_DT_SPEC_GET_OR(DT_ALIAS(led0), gpios,
 void button_pressed(const struct device *dev, struct gpio_callback *cb,
 		    uint32_t pins)
 {
-	printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
+	uint32_t now = k_cycle_get_32();
+	if(lastPressTime != 0){
+		uint32_t delta = now - lastPressTime;
+		deltaSum += delta;
+		deltaCount++;
+	}
+	lastPressTime = now;
+	counter++;
+	printk("%d\n",counter);	// prints # of button presses
+	//printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
 }
 
 int main(void)
 {
+	
+	k_timer_start(&my_timer,K_SECONDS(2),K_SECONDS(2));	// Total time per window
 	int ret;
 
 	if (!gpio_is_ready_dt(&button)) {
@@ -101,3 +140,5 @@ int main(void)
 	}
 	return 0;
 }
+
+
