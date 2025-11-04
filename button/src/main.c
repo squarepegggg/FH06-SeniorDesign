@@ -15,6 +15,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/printk.h>
 #include <inttypes.h>
+#include "ei_classifier_wrapper.h"
 
 #define SLEEP_TIME_MS	1
 #define WINDOW 10
@@ -35,6 +36,49 @@ uint32_t lastPressTime = 0;
 uint32_t deltaSum = 0;
 uint32_t deltaCount = 0;
 bool filled = false;
+uint32_t windowStartTime = 0;  // Track window start time for total_duration_ms
+
+/**
+ * Run classification on button press features
+ */
+void run_classification(void)
+{
+	// Calculate features for the model
+	// Model expects: press_count, avg_interval_ms, total_duration_ms
+	float press_count = (float)counter;
+	
+	float avg_interval_ms = 0.0f;
+	if (deltaCount > 0) {
+		uint32_t avgCycle = deltaSum / deltaCount;
+		avg_interval_ms = (float)k_cyc_to_ms_floor32(avgCycle);
+	}
+	
+	float total_duration_ms = 0.0f;
+	if (windowStartTime > 0) {
+		uint32_t now = k_cycle_get_32();
+		uint32_t elapsedCycles = now - windowStartTime;
+		total_duration_ms = (float)k_cyc_to_ms_floor32(elapsedCycles);
+	}
+	
+	// Prepare feature array as expected by the model
+	float features[3] = {press_count, avg_interval_ms, total_duration_ms};
+	
+	// Run classification through C wrapper
+	ei_classification_result_t result;
+	int err = ei_run_classification(features, &result);
+	
+	if (err != 0) {
+		printk("ERR: Failed to run classification\n");
+		return;
+	}
+	
+	// Print classification results
+	printk("Classification results:\n");
+	printk("    single: %.3f\n", result.single_value);
+	printk("    double: %.3f\n", result.double_value);
+	printk("    long: %.3f\n", result.long_value);
+	printk("Predicted: %s (confidence: %.3f)\n", result.predicted_label, result.confidence);
+}
 
 void timer_expiry(struct k_timer *timer_id){
 	__disable_irq();
@@ -50,7 +94,14 @@ void timer_expiry(struct k_timer *timer_id){
 	deltaCount = 0;	// total count
 	lastPressTime = 0;	// reference to last button press time
 	printk("Number of Button Presses: %d\n",counter);
+	
+	// Run classification before resetting
+	if (counter > 0) {
+		run_classification();
+	}
+	
 	counter = 0;	// resets button presses
+	windowStartTime = k_cycle_get_32();  // Reset window start time
 	__enable_irq();
 }
 
@@ -72,10 +123,16 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb,
 		uint32_t delta = now - lastPressTime;
 		deltaSum += delta;
 		deltaCount++;
+	} else {
+		// First press in this window, set window start time
+		windowStartTime = now;
 	}
 	lastPressTime = now;
 	counter++;
 	printk("%d\n",counter);	// prints # of button presses
+	
+	// Run classification on button press
+	run_classification();
 	//printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
 }
 
@@ -83,6 +140,7 @@ int main(void)
 {
 	
 	k_timer_start(&my_timer,K_SECONDS(2),K_SECONDS(2));	// Total time per window
+	windowStartTime = k_cycle_get_32();  // Initialize window start time
 	int ret;
 
 	if (!gpio_is_ready_dt(&button)) {
@@ -140,5 +198,3 @@ int main(void)
 	}
 	return 0;
 }
-
-
