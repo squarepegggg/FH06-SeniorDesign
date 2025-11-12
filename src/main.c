@@ -60,14 +60,22 @@ void timer_expiry(struct k_timer *timer_id){
 	uint32_t avg_ms_snapshot    = avgMS;
 
 	/* ---- Edge Impulse call (C shim in ei_glue.cpp) ---- */
+	uint32_t t0 = k_cycle_get_32();
 	const char *label = NULL;
 	float score = 0.0f;
 	int e = ei_classify_three((float)presses_snapshot,
-	                          (float)avg_ms_snapshot,
-	                          (float)WINDOW_MS,          /* or 2000.0f */
-	                          &label, &score);
+							(float)avg_ms_snapshot,
+							(float)WINDOW_MS,
+							&label, &score);
+	uint32_t t1 = k_cycle_get_32();
+
+	/* Convert CPU cycles -> microseconds (uses system clock freq) */
+	uint32_t dt_us = k_cyc_to_us_floor32(t1 - t0);
+
 	if (e == 0 && label) {
-		printk("EI Class: %s (%.2f)\n", label, (double)score);
+		printk("EI Class: %s (%.2f), latency: %u us (~%u inferences/s)\n",
+			label, (double)score, dt_us,
+			dt_us ? (1000000u / dt_us) : 0);
 	} else {
 		printk("EI classify error: %d\n", e);
 	}
