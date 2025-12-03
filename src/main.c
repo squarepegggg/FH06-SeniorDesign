@@ -4,178 +4,74 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * NOTE: If you are looking into an implementation of button events with
- * debouncing, check out `input` subsystem and `samples/subsys/input/input_dump`
- * example instead.
+ * Modified for ei2 1D CNN model - uses random array input instead of button presses
  */
 
 #include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/drivers/gpio.h>
-#include <zephyr/sys/util.h>
 #include <zephyr/sys/printk.h>
-#include <inttypes.h>
+#include <zephyr/random/random.h>
+#include <stddef.h>
 
-#define SLEEP_TIME_MS	1
-#define WINDOW 10
-#define WINDOW_MS 2000  /* your 2-second window in milliseconds */
+#define INFERENCE_INTERVAL_SEC 5  /* Run inference every 5 seconds */
+#define INPUT_ARRAY_SIZE 300      /* ei2 model expects 300 input values */
 
+/* C-callable shim implemented in src/ei2_glue.cpp */
+int ei2_classify_array(const float *input_array, size_t array_size,
+                       const char **out_label, float *out_score);
 
-/*
- * Get button configuration from the devicetree sw0 alias. This is mandatory.
- */
-#define SW0_NODE	DT_ALIAS(sw0)
-#define TIMER_INSTANCE 0
-#if !DT_NODE_HAS_STATUS_OKAY(SW0_NODE)
-#error "Unsupported board: sw0 devicetree alias is not defined"
-#endif
-static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios,
-							      {0});
-static struct gpio_callback button_cb_data;
-static uint32_t counter = 0;	// counter per button presses
-uint32_t lastPressTime = 0;
-uint32_t deltaSum = 0;
-uint32_t deltaCount = 0;
-bool filled = false;
-/* C-callable shim implemented in src/ei_glue.cpp */
-int ei_classify_three(float presses, float avg_ms, float window_ms,
-                      const char **out_label, float *out_score);
-
-void timer_expiry(struct k_timer *timer_id){
-	/* Take a snapshot of current stats while interrupts are off */
-	__disable_irq();
-
-	/* Compute average only if we have at least one interval */
-	uint32_t avgMS = 0;
-	if (deltaCount > 0) {
-		uint32_t avgCycle = deltaSum / deltaCount;          /* average cycles */
-		avgMS = k_cyc_to_ms_floor32(avgCycle);              /* cycles -> ms */
-		printk("Avg Response Time: %u ms over %u presses\n", avgMS, deltaCount);
-	} else {
-		printk("Avg Response Time: 0\n");
-	}
-
-	/* Snapshot values we'll feed to the classifier BEFORE resetting */
-	uint32_t presses_snapshot   = counter;
-	uint32_t avg_ms_snapshot    = avgMS;
-
-	/* ---- Edge Impulse call (C shim in ei_glue.cpp) ---- */
-	uint32_t t0 = k_cycle_get_32();
-	const char *label = NULL;
-	float score = 0.0f;
-	int e = ei_classify_three((float)presses_snapshot,
-							(float)avg_ms_snapshot,
-							(float)WINDOW_MS,
-							&label, &score);
-	uint32_t t1 = k_cycle_get_32();
-
-	/* Convert CPU cycles -> microseconds (uses system clock freq) */
-	uint32_t dt_us = k_cyc_to_us_floor32(t1 - t0);
-
-	if (e == 0 && label) {
-		printk("EI Class: %s (%.2f), latency: %u us (~%u inferences/s)\n",
-			label, (double)score, dt_us,
-			dt_us ? (1000000u / dt_us) : 0);
-	} else {
-		printk("EI classify error: %d\n", e);
-	}
-
-	/* Print and then reset counters for the next window */
-	printk("Number of Button Presses: %u\n", presses_snapshot);
-
-	/* Reset state for next window */
-	deltaSum = 0;
-	deltaCount = 0;
-	lastPressTime = 0;
-	counter = 0;
-
-	__enable_irq();
-}
-
-
-K_TIMER_DEFINE(my_timer,timer_expiry,NULL);
-
-
-/*
- * The led0 devicetree alias is optional. If present, we'll use it
- * to turn on the LED whenever the button is pressed.
- */
-static struct gpio_dt_spec led = GPIO_DT_SPEC_GET_OR(DT_ALIAS(led0), gpios,
-						     {0});
-
-void button_pressed(const struct device *dev, struct gpio_callback *cb,
-		    uint32_t pins)
+void timer_expiry(struct k_timer *timer_id)
 {
-	uint32_t now = k_cycle_get_32();
-	if(lastPressTime != 0){
-		uint32_t delta = now - lastPressTime;
-		deltaSum += delta;
-		deltaCount++;
-	}
-	lastPressTime = now;
-	counter++;
-	printk("%u\n",counter);	// prints # of button presses
-	//printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
+    /* Generate random array for proof of concept */
+    static float input_array[INPUT_ARRAY_SIZE];
+    
+    /* Fill array with random values between -1.0 and 1.0 */
+    for (size_t i = 0; i < INPUT_ARRAY_SIZE; i++) {
+        /* Generate random value in range [-1.0, 1.0] */
+        /* sys_rand32_get() returns uint32_t, convert to float in [-1, 1] */
+        uint32_t rand_val = sys_rand32_get();
+        input_array[i] = ((float)(rand_val % 2000) / 1000.0f) - 1.0f;
+    }
+
+    printk("Running inference with random array...\n");
+
+    /* ---- Edge Impulse ei2 call (C shim in ei2_glue.cpp) ---- */
+    uint32_t t0 = k_cycle_get_32();
+    const char *label = NULL;
+    float score = 0.0f;
+    int e = ei2_classify_array(input_array, INPUT_ARRAY_SIZE,
+                                &label, &score);
+    uint32_t t1 = k_cycle_get_32();
+
+    /* Convert CPU cycles -> microseconds (uses system clock freq) */
+    uint32_t dt_us = k_cyc_to_us_floor32(t1 - t0);
+
+    if (e == 0 && label) {
+        printk("EI2 Class: %s (%.2f), latency: %u us (~%u inferences/s)\n",
+            label, (double)score, dt_us,
+            dt_us ? (1000000u / dt_us) : 0);
+    } else {
+        printk("EI2 classify error: %d\n", e);
+    }
 }
+
+K_TIMER_DEFINE(inference_timer, timer_expiry, NULL);
 
 int main(void)
 {
-	
-	k_timer_start(&my_timer,K_SECONDS(2),K_SECONDS(2));	// Total time per window
-	int ret;
-
-	if (!gpio_is_ready_dt(&button)) {
-		printk("Error: button device %s is not ready\n",
-		       button.port->name);
-		return 0;
-	}
-
-	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, button.port->name, button.pin);
-		return 0;
-	}
-
-	ret = gpio_pin_interrupt_configure_dt(&button,
-					      GPIO_INT_EDGE_TO_ACTIVE);
-	if (ret != 0) {
-		printk("Error %d: failed to configure interrupt on %s pin %d\n",
-			ret, button.port->name, button.pin);
-		return 0;
-	}
-
-	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
-	gpio_add_callback(button.port, &button_cb_data);
-	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
-
-	if (led.port && !gpio_is_ready_dt(&led)) {
-		printk("Error %d: LED device %s is not ready; ignoring it\n",
-		       ret, led.port->name);
-		led.port = NULL;
-	}
-	if (led.port) {
-		ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT);
-		if (ret != 0) {
-			printk("Error %d: failed to configure LED device %s pin %d\n",
-			       ret, led.port->name, led.pin);
-			led.port = NULL;
-		} else {
-			printk("Set up LED at %s pin %d\n", led.port->name, led.pin);
-		}
-	}
-
-	printk("Press the button\n");
-	if (led.port) {
-		while (1) {
-			/* If we have an LED, match its state to the button's. */
-			int val = gpio_pin_get_dt(&button);
-
-			if (val >= 0) {
-				gpio_pin_set_dt(&led, val);
-			}
-			k_msleep(SLEEP_TIME_MS);
-		}
-	}
-	return 0;
+    printk("EI2 1D CNN Model - Random Array Input Demo\n");
+    printk("Running inference every %d seconds...\n", INFERENCE_INTERVAL_SEC);
+    
+    /* Start periodic timer for inference */
+    k_timer_start(&inference_timer, K_SECONDS(INFERENCE_INTERVAL_SEC),
+                  K_SECONDS(INFERENCE_INTERVAL_SEC));
+    
+    /* Run once immediately */
+    timer_expiry(NULL);
+    
+    /* Main loop - just sleep */
+    while (1) {
+        k_msleep(1000);
+    }
+    
+    return 0;
 }
