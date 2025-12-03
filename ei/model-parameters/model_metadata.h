@@ -84,7 +84,7 @@
 #define EI_CLASSIFIER_PROJECT_ID                 810898
 #define EI_CLASSIFIER_PROJECT_OWNER              "Nikhil"
 #define EI_CLASSIFIER_PROJECT_NAME               "Button Press Classification"
-#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     6
+#define EI_CLASSIFIER_PROJECT_DEPLOY_VERSION     7
 #define EI_CLASSIFIER_NN_INPUT_FRAME_SIZE        3
 #define EI_CLASSIFIER_RAW_SAMPLE_COUNT           1
 #define EI_CLASSIFIER_RAW_SAMPLES_PER_FRAME      3
