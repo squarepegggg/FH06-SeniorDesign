@@ -156,7 +156,7 @@ const ei_impulse_t impulse_810898_1 = {
     .project_name = "Button Press Classification",
     .impulse_id = 1,
     .impulse_name = "Impulse #1",
-    .deploy_version = 5,
+    .deploy_version = 6,
 
     .nn_input_frame_size = 3,
     .raw_sample_count = 1,
