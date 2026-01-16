@@ -40,6 +40,7 @@ bool filled = false;
 /* C-callable shim implemented in src/ei_glue.cpp */
 int ei_classify_three(float presses, float avg_ms, float window_ms,
                       const char **out_label, float *out_score);
+int ei_classify_csv(const char *csv_file_path);
 
 void timer_expiry(struct k_timer *timer_id){
 	/* Take a snapshot of current stats while interrupts are off */
@@ -120,62 +121,26 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb,
 
 int main(void)
 {
-	
-	k_timer_start(&my_timer,K_SECONDS(2),K_SECONDS(2));	// Total time per window
-	int ret;
+	printk("Starting CSV classification...\n");
 
-	if (!gpio_is_ready_dt(&button)) {
-		printk("Error: button device %s is not ready\n",
-		       button.port->name);
-		return 0;
-	}
+    // The path to the CSV file.
+    // NOTE: This assumes your device has a filesystem where this file is located.
+    // If running in a simulator, this path might work directly.
+    // For real hardware, you'll need to load the file onto a flash filesystem.
+    const char *csv_path = "mock_3axis_25window_edge_impulse.csv";
 
-	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
-	if (ret != 0) {
-		printk("Error %d: failed to configure %s pin %d\n",
-		       ret, button.port->name, button.pin);
-		return 0;
-	}
+    int result = ei_classify_csv(csv_path);
 
-	ret = gpio_pin_interrupt_configure_dt(&button,
-					      GPIO_INT_EDGE_TO_ACTIVE);
-	if (ret != 0) {
-		printk("Error %d: failed to configure interrupt on %s pin %d\n",
-			ret, button.port->name, button.pin);
-		return 0;
-	}
+    if (result == 0) {
+        printk("CSV classification completed successfully.\n");
+    } else {
+        printk("CSV classification failed with error code: %d\n", result);
+    }
 
-	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
-	gpio_add_callback(button.port, &button_cb_data);
-	printk("Set up button at %s pin %d\n", button.port->name, button.pin);
+    // Idle the main thread
+    while (1) {
+        k_msleep(1000);
+    }
 
-	if (led.port && !gpio_is_ready_dt(&led)) {
-		printk("Error %d: LED device %s is not ready; ignoring it\n",
-		       ret, led.port->name);
-		led.port = NULL;
-	}
-	if (led.port) {
-		ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT);
-		if (ret != 0) {
-			printk("Error %d: failed to configure LED device %s pin %d\n",
-			       ret, led.port->name, led.pin);
-			led.port = NULL;
-		} else {
-			printk("Set up LED at %s pin %d\n", led.port->name, led.pin);
-		}
-	}
-
-	printk("Press the button\n");
-	if (led.port) {
-		while (1) {
-			/* If we have an LED, match its state to the button's. */
-			int val = gpio_pin_get_dt(&button);
-
-			if (val >= 0) {
-				gpio_pin_set_dt(&led, val);
-			}
-			k_msleep(SLEEP_TIME_MS);
-		}
-	}
 	return 0;
 }
