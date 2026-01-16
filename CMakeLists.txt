@@ -5,13 +5,21 @@ project(nrfbuttonclassification)
 
 target_sources(app PRIVATE src/main.c)
 
-# Add the Edge Impulse library that lives in ./ei
-add_subdirectory(ei)
+# ============================================================================
+# Edge Impulse Model Selection
+# For testing ei-v2, comment out 'ei' and use 'ei-v2' instead
+# Only ONE model can be active at a time due to symbol conflicts
+# ============================================================================
 
-# Add our tiny C++ glue file so C code can call the C++ classifier
-target_sources(app PRIVATE src/ei_glue.cpp)
+# Original model (ei) - COMMENTED OUT FOR TESTING ei-v2
+# add_subdirectory(ei)
+# target_sources(app PRIVATE src/ei_glue.cpp)
 
-# *** NEW: link minimal C++ runtime libs ***
+# New model (ei-v2) - ACTIVE FOR TESTING
+add_subdirectory(ei-v2)
+target_sources(app PRIVATE src/ei_glue_v2.cpp)
+
+# *** link minimal C++ runtime libs ***
 # stdc++ provides new/delete, std::function, etc.
 # supc++ provides low-level support (pure virtuals, atexit helpers on ARM, etc.)
 zephyr_link_libraries(stdc++)

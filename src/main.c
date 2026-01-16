@@ -37,9 +37,9 @@ uint32_t lastPressTime = 0;
 uint32_t deltaSum = 0;
 uint32_t deltaCount = 0;
 bool filled = false;
-/* C-callable shim implemented in src/ei_glue.cpp */
-int ei_classify_three(float presses, float avg_ms, float window_ms,
-                      const char **out_label, float *out_score);
+
+/* C-callable shim implemented in src/ei_glue_v2.cpp for testing ei-v2 model */
+int ei_v2_classify_test(const char **out_label, float *out_score);
 
 void timer_expiry(struct k_timer *timer_id){
 	/* Take a snapshot of current stats while interrupts are off */
@@ -59,26 +59,27 @@ void timer_expiry(struct k_timer *timer_id){
 	uint32_t presses_snapshot   = counter;
 	uint32_t avg_ms_snapshot    = avgMS;
 
-	/* ---- Edge Impulse call (C shim in ei_glue.cpp) ---- */
+	/* ---- Edge Impulse v2 test call (C shim in ei_glue_v2.cpp) ---- */
+	/* Testing ei-v2 model with dummy 75-feature (3x25x1) input */
 	uint32_t t0 = k_cycle_get_32();
 	const char *label = NULL;
 	float score = 0.0f;
-	int e = ei_classify_three((float)presses_snapshot,
-							(float)avg_ms_snapshot,
-							(float)WINDOW_MS,
-							&label, &score);
+	int e = ei_v2_classify_test(&label, &score);
 	uint32_t t1 = k_cycle_get_32();
 
 	/* Convert CPU cycles -> microseconds (uses system clock freq) */
 	uint32_t dt_us = k_cyc_to_us_floor32(t1 - t0);
 
 	if (e == 0 && label) {
-		printk("EI Class: %s (%.2f), latency: %u us (~%u inferences/s)\n",
+		printk("EI-v2 Test: %s (%.2f), latency: %u us (~%u inferences/s)\n",
 			label, (double)score, dt_us,
 			dt_us ? (1000000u / dt_us) : 0);
 	} else {
-		printk("EI classify error: %d\n", e);
+		printk("EI-v2 classify error: %d\n", e);
 	}
+	
+	/* Also print button stats for reference */
+	printk("(Button stats: %u presses, avg %u ms)\n", presses_snapshot, avg_ms_snapshot);
 
 	/* Print and then reset counters for the next window */
 	printk("Number of Button Presses: %u\n", presses_snapshot);
