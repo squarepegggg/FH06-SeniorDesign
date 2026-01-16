@@ -50,39 +50,10 @@ void timer_expiry(struct k_timer *timer_id){
 	if (deltaCount > 0) {
 		uint32_t avgCycle = deltaSum / deltaCount;          /* average cycles */
 		avgMS = k_cyc_to_ms_floor32(avgCycle);              /* cycles -> ms */
-		printk("Avg Response Time: %u ms over %u presses\n", avgMS, deltaCount);
-	} else {
-		printk("Avg Response Time: 0\n");
 	}
 
-	/* Snapshot values we'll feed to the classifier BEFORE resetting */
-	uint32_t presses_snapshot   = counter;
-	uint32_t avg_ms_snapshot    = avgMS;
-
-	/* ---- Edge Impulse v2 test call (C shim in ei_glue_v2.cpp) ---- */
-	/* Testing ei-v2 model with dummy 75-feature (3x25x1) input */
-	uint32_t t0 = k_cycle_get_32();
-	const char *label = NULL;
-	float score = 0.0f;
-	int e = ei_v2_classify_test(&label, &score);
-	uint32_t t1 = k_cycle_get_32();
-
-	/* Convert CPU cycles -> microseconds (uses system clock freq) */
-	uint32_t dt_us = k_cyc_to_us_floor32(t1 - t0);
-
-	if (e == 0 && label) {
-		printk("EI-v2 Test: %s (%.2f), latency: %u us (~%u inferences/s)\n",
-			label, (double)score, dt_us,
-			dt_us ? (1000000u / dt_us) : 0);
-	} else {
-		printk("EI-v2 classify error: %d\n", e);
-	}
-	
-	/* Also print button stats for reference */
-	printk("(Button stats: %u presses, avg %u ms)\n", presses_snapshot, avg_ms_snapshot);
-
-	/* Print and then reset counters for the next window */
-	printk("Number of Button Presses: %u\n", presses_snapshot);
+	/* Print stats for this 2-second window */
+	printk("--- Window stats: %u presses, avg interval %u ms ---\n", counter, avgMS);
 
 	/* Reset state for next window */
 	deltaSum = 0;
@@ -115,8 +86,23 @@ void button_pressed(const struct device *dev, struct gpio_callback *cb,
 	}
 	lastPressTime = now;
 	counter++;
-	printk("%u\n",counter);	// prints # of button presses
-	//printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
+	printk("Button press #%u - Running EI-v2 classification...\n", counter);
+	
+	/* Run classification with demo data on button press */
+	uint32_t t0 = k_cycle_get_32();
+	const char *label = NULL;
+	float score = 0.0f;
+	int e = ei_v2_classify_test(&label, &score);
+	uint32_t t1 = k_cycle_get_32();
+	
+	uint32_t dt_us = k_cyc_to_us_floor32(t1 - t0);
+	
+	if (e == 0 && label) {
+		printk(">>> EI-v2 Result: %s (%.2f), latency: %u us\n",
+			label, (double)score, dt_us);
+	} else {
+		printk(">>> EI-v2 classify error: %d\n", e);
+	}
 }
 
 int main(void)
