@@ -1,1 +1,4 @@
 build*/
+venv_tf/
+src/workspace.code-workspace
+mock_3axis_25window_edge_impulse.csv
