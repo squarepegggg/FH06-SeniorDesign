@@ -14,13 +14,10 @@ def build_1dcnn_classifier(num_classes: int):
     x = tf.keras.layers.Conv1D(32, 5, padding="same", activation="relu")(x)
     x = tf.keras.layers.MaxPool1D(2)(x)
 
-    x = tf.keras.layers.Conv1D(64, 3, padding="same", activation="relu")(x)
+    x = tf.keras.layers.Conv1D(32, 3, padding="same", activation="relu")(x)
     x = tf.keras.layers.MaxPool1D(2)(x)
 
-    x = tf.keras.layers.Conv1D(64, 3, padding="same", activation="relu")(x)
-    x = tf.keras.layers.MaxPool1D(2)(x)
-
-    x = tf.keras.layers.Conv1D(64, 3, padding="same", activation="relu")(x)
+    x = tf.keras.layers.Conv1D(32, 3, padding="same", activation="relu")(x)
     x = tf.keras.layers.GlobalAveragePooling1D()(x)
 
     x = tf.keras.layers.Dense(64, activation="relu")(x)
@@ -38,7 +35,6 @@ model.compile(optimizer="adam",
 X = np.random.randn(200, 3, 25, 1).astype(np.float32)
 y = np.random.randint(0, NUM_CLASSES, size=(200,), dtype=np.int32)
 model.fit(X, y, epochs=3, batch_size=32)
-
 
 # ---- Representative dataset for int8 quantization ----
 def representative_dataset():
