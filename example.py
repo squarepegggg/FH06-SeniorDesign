@@ -107,10 +107,19 @@ model = build_1dcnn_classifier(NUM_CLASSES)
 model.compile(optimizer="adam",
               loss="sparse_categorical_crossentropy",
               metrics=["accuracy"])
-
-# ---- Train on real data ----
+# Use a validation split to separate training and testing data
 print(f"\nTraining on {len(X)} samples...")
-model.fit(X, y, epochs=3, batch_size=32, validation_split=0.2)
+from sklearn.model_selection import train_test_split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+model.fit(X_train, y_train, epochs=3, batch_size=32, validation_data=(X_test, y_test))
+
+# ---- Evaluate the model on the test set ----
+print("\nEvaluating model on test data...")
+test_loss, test_acc = model.evaluate(X_test, y_test, verbose=0)
+print(f"Test Accuracy: {test_acc:.4f}")
 
 # ---- Representative dataset for int8 quantization ----
 def representative_dataset():
